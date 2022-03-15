@@ -1,0 +1,74 @@
+#open libraries 
+library(basedosdados)
+library(tidyverse)
+library(ggrepel)
+library(plotly)
+library(treemapify)
+library(ggforce)
+
+#carregando base dados manualmente
+
+#TRATAMENTO DOS DADOS
+
+# filtrando pela produção de soja em 2019
+municipio_lavouras_temporarias %>% 
+  filter(ano == "2019" & produto == "Soja (em grão)") %>%
+  filter(quantidade_produzida != "NA" &
+           area_plantada!= "NA") %>% 
+  arrange(desc(quantidade_produzida))-> producao_2019
+
+#Produção de soja por area plantada e colhida, agrupadas por estado
+producao_2019 %>% 
+  group_by(sigla_uf) %>% 
+  summarise(area_plantada = sum(area_plantada)/1000,  
+            producao = sum(quantidade_produzida/1000))%>% 
+  arrange(desc(producao)) %>% 
+  head(10)->producao_estados
+
+#Gráfico de árvore de estados com maior produção
+producao_2019 %>% 
+  group_by(sigla_uf) %>% 
+  summarise(sum(quantidade_produzida)) %>% 
+  rename(producao = `sum(quantidade_produzida)`) %>% 
+  ggplot(aes(area=producao, fill= sigla_uf, label = sigla_uf)) + 
+  geom_treemap()+
+  geom_treemap_text(colour = "white",
+                    place = "centre",
+                    size = 15)+
+  labs(x = "Área Plantada (em milhares)",
+       y= "Quantidade produzida (em milhares)",
+       caption = "Fonte:BasedosDados", 
+       fill =  "Estados")+
+  theme(plot.title=element_text(family='', face='bold', colour='black', size=30)
+) ->tree
+
+
+# Juntando com o ID do municipio para junção de base no futuro e alterando a escala das quantidades dos eixos X e Y
+RELATORIO_DTB_BRASIL_MUNICIPIO %>%
+  mutate(id_municipio = as.numeric(`Código Município Completo`)) %>% 
+  select(12,13,14) %>%  
+  full_join(producao_2019, by = "id_municipio") %>% 
+  arrange(desc(quantidade_produzida)) %>% 
+  mutate(quantidade_produzida = (quantidade_produzida/1000)) %>%
+  mutate (area_plantada = (area_plantada/1000))->producao_soja
+
+#selecionado as cem maiores cidades
+producao_soja %>%
+  head(100) ->cem_maiores
+
+cem_maiores %>% 
+  group_by(sigla_uf) %>% 
+  filter(sigla_uf =="GO"| sigla_uf=="MS" | sigla_uf == "MT")->cidades
+
+#Plot dos municipios com maior produção, com zoom no meio do gráfico
+cidades %>% 
+  ggplot(aes(area_plantada, quantidade_produzida, color= sigla_uf), size = 5)+
+  geom_point(position = "jitter", alpha = 0.90)+
+  theme_classic ()+
+  geom_label_repel(aes(label = Nome_Município))+
+  facet_zoom(xlim =c(200, 400))+
+  labs( x = "Quantidade (em milhares)",
+        y = "Valor (em milhares)",
+        colour= "Estado",
+        caption = "Fonte:BaseDados",
+        colour = "Estados") ->soja_municipio
